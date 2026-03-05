@@ -1,5 +1,15 @@
-aws_region    = "us-east-1"
-state_bucket  = "<your-unique-tfstate-bucket-name>"
-lock_table    = "<your-dynamodb-lock-table-name>"
+# Copy this file to terraform.tfvars and fill in real values.
+# terraform.tfvars is gitignored so secrets are never committed.
+
+aws_region    = "ap-south-1"
+state_bucket  = "<your-unique-s3-bucket-name>"
+lock_table    = "<your-dynamodb-table-name>"
 vpc_cidr      = "10.0.0.0/16"
-ecr_repo_name = "<your-ecr-repo-name>"
+ecr_repo_name = "eks-app"
+cluster_name  = "eks-dev-cluster"
+
+# Format: "github-org-or-username/repository-name"
+github_repo = "<your-github-org>/<your-repo-name>"
+
+# Set a strong password; never commit the real value
+grafana_admin_password = "<your-grafana-admin-password>"

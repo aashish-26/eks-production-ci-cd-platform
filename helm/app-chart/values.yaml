@@ -1,15 +1,31 @@
+# ============================================================
+# Default values for eks-app Helm chart.
+#
+# Override at deploy time with:
+#   helm upgrade --install eks-app helm/app-chart \
+#     --set image.repository=<ecr-url> \
+#     --set image.tag=<sha>
+# ============================================================
+
+# Number of pod replicas to run at all times.
+# HPA will scale this up/down based on CPU target.
 replicaCount: 2
 
 image:
+  # Overridden by CI: --set image.repository=<ecr-registry>/eks-app
   repository: eks-app
+  # Overridden by CI: --set image.tag=<commit-sha>
   tag: latest
   pullPolicy: IfNotPresent
 
 service:
   type: ClusterIP
-  port: 80
+  port: 80 # external port on the Service
 
+# Single source of truth for the app's listening port.
+# Referenced by Deployment (containerPort) and Service (targetPort).
 containerPort: 8080
+
 resources:
   limits:
     cpu: 500m
@@ -18,19 +34,25 @@ resources:
     cpu: 100m
     memory: 128Mi
 
+# Liveness probe — Kubernetes restarts the pod if this fails.
+# Points to GET /health which returns 200 as long as the process is alive.
 livenessProbe:
   httpGet:
     path: /health
     port: 8080
   initialDelaySeconds: 10
   periodSeconds: 15
+  failureThreshold: 3
 
+# Readiness probe — Kubernetes stops sending traffic if this fails.
+# Points to GET /ready which checks the PostgreSQL connection.
 readinessProbe:
   httpGet:
     path: /ready
     port: 8080
   initialDelaySeconds: 5
   periodSeconds: 10
+  failureThreshold: 3
 
 ingress:
   enabled: true
@@ -40,31 +62,63 @@ ingress:
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/backend-protocol: HTTP
   hosts:
-  - host: eks-app.example.com
+  - host: eks-app.example.com # replace with your real domain or ALB DNS
     paths:
     - path: /
       pathType: ImplementationSpecific
 
 namespace: default
 
-# HPA configuration
+# ------------------------------------------------
+# Horizontal Pod Autoscaler (Phase 6)
+# ------------------------------------------------
 hpa:
   enabled: true
   minReplicas: 2
   maxReplicas: 5
-  targetCPUUtilizationPercentage: 60
+  targetCPUUtilizationPercentage: 60 # scale up when average CPU > 60%
 
-# PodDisruptionBudget
+# ------------------------------------------------
+# PodDisruptionBudget (Phase 6)
+# Ensures at least 1 pod stays running during
+# voluntary disruptions (node drain, upgrades).
+# ------------------------------------------------
 pdb:
   enabled: true
   minAvailable: 1
 
-# Database connection (filled after deploying PostgreSQL)
+# ------------------------------------------------
+# ServiceAccount (Phase 4)
+# ------------------------------------------------
+serviceAccount:
+  create: true
+  # Optional IRSA annotation (attach an AWS IAM role to the pod)
+  # annotations:
+  #   eks.amazonaws.com/role-arn: arn:aws:iam::<ACCOUNT>:role/<ROLE>
+  annotations: {}
+  # If create=false, set this to the name of an existing ServiceAccount
+  name: ""
+
+# ------------------------------------------------
+# Application config (non-sensitive)
+# Rendered into a ConfigMap and injected via envFrom.
+# ------------------------------------------------
+config:
+  logLevel: info # debug | info | warn | error
+
+# ------------------------------------------------
+# Database connection
+# ------------------------------------------------
 db:
   host: postgresql.database.svc.cluster.local
   port: 5432
   user: postgres
   database: ordersdb
-  # Secret that contains the DB password (helm/bitnami creates this)
+
+  # If password is set, this chart creates a Secret with PGPASSWORD.
+  # Leave empty to use an existing Secret (e.g. created by Bitnami postgresql).
+  password: ""
+
+  # Fallback: existing Secret name and key (used when password is empty)
   passwordSecret: postgresql
   passwordKey: postgresql-password

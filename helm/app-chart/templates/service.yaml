@@ -1,3 +1,10 @@
+# ============================================================
+# Service — stable internal DNS name and port for the Deployment.
+#
+# Type ClusterIP: reachable only inside the cluster.
+# External traffic arrives via the Ingress (ALB), which targets
+# pods directly (alb target-type: ip) rather than the Service IP.
+# ============================================================
 apiVersion: v1
 kind: Service
 metadata:
@@ -7,9 +14,9 @@ metadata:
 spec:
   type: {{ .Values.service.type }}
   ports:
-    - port: {{ .Values.service.port }}
+    - port:       {{ .Values.service.port }}
       targetPort: {{ .Values.containerPort }}
-      protocol: TCP
-      name: http
+      protocol:   TCP
+      name:       http
   selector:
     {{- include "eks-app.labels" . | nindent 4 }}

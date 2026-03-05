@@ -1,3 +1,17 @@
+# ============================================================
+# Deployment — manages the app pod's lifecycle.
+#
+# Key design decisions:
+#   RollingUpdate strategy: maxUnavailable=0 means zero-downtime
+#   updates (always bring a new pod up before taking an old one
+#   down). maxSurge=1 keeps cost low by limiting over-provisioning.
+#
+#   Probes: liveness restarts the pod if it hangs; readiness keeps
+#   traffic away until the DB connection is established.
+#
+#   envFrom ConfigMap: non-sensitive config injected as env vars.
+#   secretKeyRef: DB password sourced from a K8s Secret.
+# ============================================================
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,42 +20,70 @@ metadata:
     {{- include "eks-app.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+
+  # Zero-downtime rolling update strategy
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0   # never take a pod down before a new one is Ready
+      maxSurge: 1         # allow one extra pod during the rollout
+
   selector:
     matchLabels:
       {{- include "eks-app.labels" . | nindent 6 }}
+
   template:
     metadata:
       labels:
         {{- include "eks-app.labels" . | nindent 8 }}
     spec:
+      # Use the dedicated ServiceAccount (created by serviceaccount.yaml)
+      serviceAccountName: {{ include "eks-app.serviceAccountName" . }}
+
       containers:
         - name: {{ include "eks-app.name" . }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+          ports:
+            - containerPort: {{ .Values.containerPort }}
+              protocol: TCP
+
+          # Non-sensitive config injected from the ConfigMap (LOG_LEVEL, PORT, PG*)
+          envFrom:
+            - configMapRef:
+                name: {{ include "eks-app.fullname" . }}-config
+
+          # Sensitive env vars injected individually from a Secret
           env:
-            - name: PGHOST
-              value: "{{ .Values.db.host }}"
-            - name: PGPORT
-              value: "{{ .Values.db.port }}"
-            - name: PGUSER
-              value: "{{ .Values.db.user }}"
-            - name: PGDATABASE
-              value: "{{ .Values.db.database }}"
+            {{- if .Values.db.password }}
+            # Use the Secret created by this chart (db.password is set)
             - name: PGPASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: "{{ .Values.db.passwordSecret }}"
-                  key: "{{ .Values.db.passwordKey }}"
-          ports:
-            - containerPort: {{ .Values.containerPort }}
+                  name: {{ include "eks-app.fullname" . }}-secret
+                  key: PGPASSWORD
+            {{- else }}
+            # Fall back to an existing Secret (e.g. created by Bitnami postgresql chart)
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.db.passwordSecret | quote }}
+                  key:  {{ .Values.db.passwordKey | quote }}
+            {{- end }}
+
           resources:
             limits:
-              cpu: {{ .Values.resources.limits.cpu }}
+              cpu:    {{ .Values.resources.limits.cpu }}
               memory: {{ .Values.resources.limits.memory }}
             requests:
-              cpu: {{ .Values.resources.requests.cpu }}
+              cpu:    {{ .Values.resources.requests.cpu }}
               memory: {{ .Values.resources.requests.memory }}
+
+          # Liveness: restart if the process hangs (no connection to the health endpoint)
           livenessProbe:
 {{ toYaml .Values.livenessProbe | indent 12 }}
+
+          # Readiness: stop sending traffic if the DB is unreachable
           readinessProbe:
 {{ toYaml .Values.readinessProbe | indent 12 }}

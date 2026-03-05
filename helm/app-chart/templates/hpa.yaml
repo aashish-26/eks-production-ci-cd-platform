@@ -1,3 +1,14 @@
+# ============================================================
+# HorizontalPodAutoscaler
+#
+# Scales replica count based on average CPU utilisation.
+# When CPU across all pods exceeds the target, HPA adds replicas
+# (up to maxReplicas). When load drops, it scales back down
+# (eventually to minReplicas).
+#
+# Requires the metrics-server add-on to be installed on EKS.
+# The kube-prometheus-stack (monitoring module) includes this.
+# ============================================================
 {{- if .Values.hpa.enabled }}
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
@@ -17,6 +28,6 @@ spec:
       resource:
         name: cpu
         target:
-          type: Utilization
+          type:               Utilization
           averageUtilization: {{ .Values.hpa.targetCPUUtilizationPercentage }}
 {{- end }}

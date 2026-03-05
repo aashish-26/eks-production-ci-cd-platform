@@ -1,8 +1,21 @@
+# ============================================================
+# Ingress — routes external HTTP traffic to the app Service.
+#
+# Uses the AWS ALB Ingress Controller (installed by Terraform).
+# The annotations configure the ALB:
+#   scheme: internet-facing  → public ALB reachable from the internet
+#   target-type: ip          → ALB sends traffic directly to pod IPs
+#                              (avoids an extra hop through kube-proxy)
+#   backend-protocol: HTTP   → ALB to pod connection is unencrypted
+#                              (add TLS termination at the ALB for prod)
+# ============================================================
 {{- if .Values.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "eks-app.fullname" . }}-ingress
+  labels:
+    {{- include "eks-app.labels" . | nindent 4 }}
   annotations:
 {{ toYaml .Values.ingress.annotations | indent 4 }}
 spec:

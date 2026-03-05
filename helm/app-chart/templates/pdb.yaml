@@ -1,3 +1,14 @@
+# ============================================================
+# PodDisruptionBudget
+#
+# Tells Kubernetes how many pods must stay RUNNING during a
+# voluntary disruption (e.g. node drain for upgrades, AZ
+# evacuation). Without a PDB, kubectl drain could remove ALL
+# pods at once.
+#
+# minAvailable: 1 means: "always keep at least 1 pod running".
+# With 2 replicas this allows draining one node at a time.
+# ============================================================
 {{- if .Values.pdb.enabled }}
 apiVersion: policy/v1
 kind: PodDisruptionBudget

@@ -1,35 +1,56 @@
+# ============================================================
+# Local development environment.
+#
+# Starts two containers:
+#   db  — PostgreSQL 15 (matches the version used in prod)
+#   app — the Node.js REST API (hot-reload via nodemon)
+#
+# Usage:
+#   docker-compose up          # start in foreground
+#   docker-compose up -d       # start in background
+#   docker-compose down -v     # stop and remove volumes
+# ============================================================
+version: "3.9"
+
 services:
+
+  # ---- PostgreSQL ----
   db:
     image: postgres:15-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
+      POSTGRES_USER:     postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: eksapp
+      POSTGRES_DB:       ordersdb
+    ports:
+      - "5432:5432"
     volumes:
-      - db-data:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
+      interval: 5s
+      timeout: 3s
       retries: 5
 
+  # ---- Application ----
   app:
     build:
       context: .
       dockerfile: Dockerfile
-    depends_on:
-      db:
-        condition: service_healthy
-    environment:
-      PGHOST: db
-      PGPORT: 5432
-      PGUSER: postgres
-      PGPASSWORD: postgres
-      PGDATABASE: eksapp
-      PORT: 8080
+    restart: unless-stopped
     ports:
       - "8080:8080"
+    environment:
+      PORT:       8080
+      LOG_LEVEL:  debug     # verbose in dev
+      PGHOST:     db        # service name resolves inside Docker network
+      PGPORT:     5432
+      PGUSER:     postgres
+      PGPASSWORD: postgres
+      PGDATABASE: ordersdb
+    depends_on:
+      db:
+        condition: service_healthy   # wait for pg to be ready before starting
 
 volumes:
-  db-data:
+  pgdata:   # named volume so DB data persists across container restarts

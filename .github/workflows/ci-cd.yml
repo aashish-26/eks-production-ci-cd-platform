@@ -12,58 +12,59 @@ jobs:
   build-push-deploy:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write   # required for OIDC token
+      id-token: write   # required for OIDC token exchange with AWS
       contents: read
 
     steps:
-      # -------------------------------------------------
-      # 1. Source
-      # -------------------------------------------------
+
+      # 1. Checkout source code
       - name: Checkout
         uses: actions/checkout@v4
 
-      # -------------------------------------------------
-      # 2. App validation (runs BEFORE Docker build so
-      #    failures are reported fast and cheaply)
-      # -------------------------------------------------
+      # 2. Node.js + dependency install
+      #    working-directory: app  because package.json lives in app/
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
 
       - name: Install dependencies
-        working-directory: app          # package.json lives in app/
+        working-directory: app
         run: npm ci
 
-      # -------------------------------------------------
-      # 3. Image tag derived from commit SHA
-      # -------------------------------------------------
+      # 3. Lint - fail fast on code style errors
+      - name: Lint
+        working-directory: app
+        run: npm run lint
+
+      # 4. Unit tests - fail fast before building an image
+      - name: Unit tests
+        working-directory: app
+        run: npm test
+
+      # 5. Derive image tag from commit SHA (prefix sha-)
       - name: Set image tag
         id: vars
-        run: echo "IMAGE_TAG=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_OUTPUT
+        run: echo "IMAGE_TAG=sha-$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_OUTPUT
 
-      # -------------------------------------------------
-      # 4. AWS auth via OIDC (no long-lived keys)
-      # -------------------------------------------------
+      # 6. AWS authentication via GitHub OIDC (no static access keys)
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # -------------------------------------------------
-      # 5. ECR login – outputs `registry` used below
-      # -------------------------------------------------
+      # 7. Log in to ECR; outputs the registry URL as steps.ecr.outputs.registry
       - name: Login to Amazon ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # -------------------------------------------------
-      # 6. Build & push  (build context = app/ so that
-      #    COPY instructions in Dockerfile resolve correctly
-      #    and app/.dockerignore is honoured)
-      # -------------------------------------------------
-      - name: Build, tag and push image to ECR
+      # 8. Build and push image
+      #    Build context = app/ so COPY in Dockerfile resolves correctly
+      #    and app/.dockerignore is applied.
+      - name: Build and push Docker image
         env:
           ECR_REPOSITORY: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO_NAME }}
           IMAGE_TAG: ${{ steps.vars.outputs.IMAGE_TAG }}
@@ -74,32 +75,23 @@ jobs:
             app/
           docker push $ECR_REPOSITORY:$IMAGE_TAG
 
-      # -------------------------------------------------
-      # 7. Security scan – fail pipeline on CRITICAL vulns
-      # -------------------------------------------------
+      # 9. Trivy security scan - blocks pipeline on CRITICAL CVEs
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@master
-        env:
-          ECR_REPOSITORY: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO_NAME }}
-          IMAGE_TAG: ${{ steps.vars.outputs.IMAGE_TAG }}
         with:
-          image-ref: "${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO_NAME }}:${{ steps.vars.outputs.IMAGE_TAG }}"
+          image-ref: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO_NAME }}:${{ steps.vars.outputs.IMAGE_TAG }}
           format: table
           exit-code: '1'
           severity: CRITICAL
 
-      # -------------------------------------------------
-      # 8. Authenticate kubectl to EKS cluster
-      # -------------------------------------------------
+      # 10. Point kubectl at the EKS cluster
       - name: Update kubeconfig
         run: |
           aws eks update-kubeconfig \
             --name ${{ secrets.EKS_CLUSTER_NAME }} \
             --region ${{ env.AWS_REGION }}
 
-      # -------------------------------------------------
-      # 9. Helm deploy (upgrade or install)
-      # -------------------------------------------------
+      # 11. Helm deploy - --wait blocks until all pods are Ready
       - name: Deploy via Helm
         env:
           ECR_REPOSITORY: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO_NAME }}
@@ -111,23 +103,21 @@ jobs:
             --set image.tag=$IMAGE_TAG \
             --wait --timeout 5m
 
-      # -------------------------------------------------
-      # 10. Smoke test – verify /health returns 200
-      # -------------------------------------------------
+      # 12. Smoke test - confirm /health responds 200 via the ALB
       - name: Smoke test
         run: |
           ALB_HOST=$(kubectl get ingress eks-app-ingress \
             -n default \
             -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
-          echo "ALB host: $ALB_HOST"
+          echo "ALB hostname: $ALB_HOST"
           for i in $(seq 1 10); do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$ALB_HOST/health)
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$ALB_HOST/health || echo "000")
             if [ "$STATUS" = "200" ]; then
-              echo "Smoke test passed ($STATUS)"
+              echo "Smoke test passed"
               exit 0
             fi
-            echo "Attempt $i: got $STATUS, retrying in 15s..."
+            echo "Attempt $i: got $STATUS - retrying in 15s..."
             sleep 15
           done
-          echo "Smoke test FAILED after 10 attempts"
+          echo "Smoke test FAILED"
           exit 1
