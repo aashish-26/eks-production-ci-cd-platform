@@ -1,0 +1,26 @@
+# ============================================================
+# ConfigMap — non-sensitive application configuration.
+#
+# All environment variables listed here are safe to commit.
+# Sensitive values (passwords, tokens) go in the Secret instead.
+#
+# Kubernetes injects these via envFrom in the Deployment, so
+# changing a value here only takes effect on the next rollout
+# (`helm upgrade` or `kubectl rollout restart`).
+# ============================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "eks-app.fullname" . }}-config
+  labels:
+    {{- include "eks-app.labels" . | nindent 4 }}
+data:
+  # Log level controls Pino output verbosity (debug | info | warn | error)
+  LOG_LEVEL:  {{ .Values.config.logLevel | quote }}
+  # Must match containerPort in values.yaml
+  PORT:       {{ .Values.containerPort | quote }}
+  # PostgreSQL connection — non-sensitive connection details
+  PGHOST:     {{ .Values.db.host | quote }}
+  PGPORT:     {{ .Values.db.port | quote }}
+  PGUSER:     {{ .Values.db.user | quote }}
+  PGDATABASE: {{ .Values.db.database | quote }}
