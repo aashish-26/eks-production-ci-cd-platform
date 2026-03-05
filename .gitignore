@@ -1,0 +1,69 @@
+# ============================================================
+# Terraform
+# ============================================================
+# Downloaded providers and modules — never commit
+**/.terraform/
+# State files — real state is in S3; local copies must not be tracked
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+# Plan files may contain secrets
+*.tfplan
+*.tfplan.json
+# Real variable files; commit only the .example equivalents
+terraform.tfvars
+*.auto.tfvars
+# Crash logs
+crash.log
+crash.*.log
+# Local override files (per-developer, not shared)
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+# NOTE: .terraform.lock.hcl IS safe and SHOULD be committed
+# ============================================================
+# Node / JavaScript
+# ============================================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+# Test coverage
+coverage/
+.nyc_output/
+# Compiled output
+dist/
+build/
+# ============================================================
+# Environment / Secrets
+# ============================================================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.pfx
+token.txt
+*-credentials.json
+kubeconfig
+# ============================================================
+# Docker
+# ============================================================
+*.tar
+# ============================================================
+# OS / Editor
+# ============================================================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+# ============================================================
+# Logs
+# ============================================================
+*.log
+logs/

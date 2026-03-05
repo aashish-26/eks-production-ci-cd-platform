@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "eks-app.fullname" . }}
+  labels:
+    {{- include "eks-app.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "eks-app.labels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "eks-app.labels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: {{ include "eks-app.name" . }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: PGHOST
+              value: "{{ .Values.db.host }}"
+            - name: PGPORT
+              value: "{{ .Values.db.port }}"
+            - name: PGUSER
+              value: "{{ .Values.db.user }}"
+            - name: PGDATABASE
+              value: "{{ .Values.db.database }}"
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: "{{ .Values.db.passwordSecret }}"
+                  key: "{{ .Values.db.passwordKey }}"
+          ports:
+            - containerPort: {{ .Values.containerPort }}
+          resources:
+            limits:
+              cpu: {{ .Values.resources.limits.cpu }}
+              memory: {{ .Values.resources.limits.memory }}
+            requests:
+              cpu: {{ .Values.resources.requests.cpu }}
+              memory: {{ .Values.resources.requests.memory }}
+          livenessProbe:
+{{ toYaml .Values.livenessProbe | indent 12 }}
+          readinessProbe:
+{{ toYaml .Values.readinessProbe | indent 12 }}

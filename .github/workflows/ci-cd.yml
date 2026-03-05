@@ -1,0 +1,133 @@
+name: CI/CD Build, Push & Deploy
+
+on:
+  push:
+    branches: [ main ]
+
+env:
+  AWS_REGION:    ap-south-1
+  ECR_REPO_NAME: eks-app
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # required for OIDC token
+      contents: read
+
+    steps:
+      # -------------------------------------------------
+      # 1. Source
+      # -------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # -------------------------------------------------
+      # 2. App validation (runs BEFORE Docker build so
+      #    failures are reported fast and cheaply)
+      # -------------------------------------------------
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        working-directory: app          # package.json lives in app/
+        run: npm ci
+
+      # -------------------------------------------------
+      # 3. Image tag derived from commit SHA
+      # -------------------------------------------------
+      - name: Set image tag
+        id: vars
+        run: echo "IMAGE_TAG=$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_OUTPUT
+
+      # -------------------------------------------------
+      # 4. AWS auth via OIDC (no long-lived keys)
+      # -------------------------------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v3
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # -------------------------------------------------
+      # 5. ECR login – outputs `registry` used below
+      # -------------------------------------------------
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # -------------------------------------------------
+      # 6. Build & push  (build context = app/ so that
+      #    COPY instructions in Dockerfile resolve correctly
+      #    and app/.dockerignore is honoured)
+      # -------------------------------------------------
+      - name: Build, tag and push image to ECR
+        env:
+          ECR_REPOSITORY: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO_NAME }}
+          IMAGE_TAG: ${{ steps.vars.outputs.IMAGE_TAG }}
+        run: |
+          docker build \
+            -t $ECR_REPOSITORY:$IMAGE_TAG \
+            -f app/Dockerfile \
+            app/
+          docker push $ECR_REPOSITORY:$IMAGE_TAG
+
+      # -------------------------------------------------
+      # 7. Security scan – fail pipeline on CRITICAL vulns
+      # -------------------------------------------------
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@master
+        env:
+          ECR_REPOSITORY: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO_NAME }}
+          IMAGE_TAG: ${{ steps.vars.outputs.IMAGE_TAG }}
+        with:
+          image-ref: "${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO_NAME }}:${{ steps.vars.outputs.IMAGE_TAG }}"
+          format: table
+          exit-code: '1'
+          severity: CRITICAL
+
+      # -------------------------------------------------
+      # 8. Authenticate kubectl to EKS cluster
+      # -------------------------------------------------
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --name ${{ secrets.EKS_CLUSTER_NAME }} \
+            --region ${{ env.AWS_REGION }}
+
+      # -------------------------------------------------
+      # 9. Helm deploy (upgrade or install)
+      # -------------------------------------------------
+      - name: Deploy via Helm
+        env:
+          ECR_REPOSITORY: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO_NAME }}
+          IMAGE_TAG: ${{ steps.vars.outputs.IMAGE_TAG }}
+        run: |
+          helm upgrade --install eks-app helm/app-chart \
+            --namespace default --create-namespace \
+            --set image.repository=$ECR_REPOSITORY \
+            --set image.tag=$IMAGE_TAG \
+            --wait --timeout 5m
+
+      # -------------------------------------------------
+      # 10. Smoke test – verify /health returns 200
+      # -------------------------------------------------
+      - name: Smoke test
+        run: |
+          ALB_HOST=$(kubectl get ingress eks-app-ingress \
+            -n default \
+            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          echo "ALB host: $ALB_HOST"
+          for i in $(seq 1 10); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$ALB_HOST/health)
+            if [ "$STATUS" = "200" ]; then
+              echo "Smoke test passed ($STATUS)"
+              exit 0
+            fi
+            echo "Attempt $i: got $STATUS, retrying in 15s..."
+            sleep 15
+          done
+          echo "Smoke test FAILED after 10 attempts"
+          exit 1

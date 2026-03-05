@@ -1,0 +1,5 @@
+aws_region    = "us-east-1"
+state_bucket  = "<your-unique-tfstate-bucket-name>"
+lock_table    = "<your-dynamodb-lock-table-name>"
+vpc_cidr      = "10.0.0.0/16"
+ecr_repo_name = "<your-ecr-repo-name>"
