@@ -23,16 +23,18 @@ jobs:
 
       # 2. Node.js + dependency install
       #    working-directory: app  because package.json lives in app/
+      #    No cache-dependency-path set: the repo does not commit package-lock.json
+      #    (the Dockerfile COPY uses the optional glob pattern package-lock.json*).
+      #    npm install generates/updates the lockfile on every run; switch to
+      #    npm ci once you have committed a package-lock.json to the repo.
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
-          cache: npm
-          cache-dependency-path: app/package-lock.json
 
       - name: Install dependencies
         working-directory: app
-        run: npm ci
+        run: npm install
 
       # 3. Lint - fail fast on code style errors
       - name: Lint
