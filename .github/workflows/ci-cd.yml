@@ -12,21 +12,13 @@ jobs:
   build-push-deploy:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write   # required for OIDC token exchange with AWS
+      id-token: write
       contents: read
 
     steps:
-
-      # 1. Checkout source code
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 2. Node.js + dependency install
-      #    working-directory: app  because package.json lives in app/
-      #    No cache-dependency-path set: the repo does not commit package-lock.json
-      #    (the Dockerfile COPY uses the optional glob pattern package-lock.json*).
-      #    npm install generates/updates the lockfile on every run; switch to
-      #    npm ci once you have committed a package-lock.json to the repo.
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -36,36 +28,28 @@ jobs:
         working-directory: app
         run: npm install
 
-      # 3. Lint - fail fast on code style errors
       - name: Lint
         working-directory: app
         run: npm run lint
 
-      # 4. Unit tests - fail fast before building an image
       - name: Unit tests
         working-directory: app
         run: npm test
 
-      # 5. Derive image tag from commit SHA (prefix sha-)
       - name: Set image tag
         id: vars
         run: echo "IMAGE_TAG=sha-$(echo ${GITHUB_SHA} | cut -c1-7)" >> $GITHUB_OUTPUT
 
-      # 6. AWS authentication via GitHub OIDC (no static access keys)
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # 7. Log in to ECR; outputs the registry URL as steps.ecr.outputs.registry
       - name: Login to Amazon ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # 8. Build and push image
-      #    Build context = app/ so COPY in Dockerfile resolves correctly
-      #    and app/.dockerignore is applied.
       - name: Build and push Docker image
         env:
           ECR_REPOSITORY: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO_NAME }}
@@ -77,7 +61,6 @@ jobs:
             app/
           docker push $ECR_REPOSITORY:$IMAGE_TAG
 
-      # 9. Trivy security scan - blocks pipeline on CRITICAL CVEs
       - name: Scan image with Trivy
         uses: aquasecurity/trivy-action@master
         with:
@@ -86,19 +69,12 @@ jobs:
           exit-code: '1'
           severity: CRITICAL
 
-      # 10. Point kubectl at the EKS cluster
       - name: Update kubeconfig
         run: |
           aws eks update-kubeconfig \
             --name ${{ secrets.EKS_CLUSTER_NAME }} \
             --region ${{ env.AWS_REGION }}
 
-      # 11. Make the PostgreSQL password available in the default namespace.
-      #     Bitnami PostgreSQL creates Secret "postgresql" in the database
-      #     namespace. The app pod references that Secret from the default
-      #     namespace via deployment.yaml secretKeyRef — Kubernetes does not
-      #     allow cross-namespace Secret references, so we copy it here.
-      #     `kubectl apply` is idempotent: safe to re-run on every deploy.
       - name: Copy PostgreSQL secret to default namespace
         run: |
           kubectl get secret postgresql -n database -o json \
@@ -111,7 +87,6 @@ jobs:
               ) | .metadata.namespace = "default"' \
             | kubectl apply -f -
 
-      # 12. Helm deploy - --wait blocks until all pods are Ready
       - name: Deploy via Helm
         env:
           ECR_REPOSITORY: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO_NAME }}
@@ -123,10 +98,6 @@ jobs:
             --set image.tag=$IMAGE_TAG \
             --wait --timeout 5m
 
-      # 13. Smoke test - confirm /health responds 200 via the ALB.
-      #     The Helm fullname template renders as <chartName>-<releaseName>
-      #     = eks-app-eks-app, so the ingress is eks-app-eks-app-ingress.
-      #     Using a label selector avoids hardcoding the exact name.
       - name: Smoke test
         run: |
           ALB_HOST=$(kubectl get ingress \

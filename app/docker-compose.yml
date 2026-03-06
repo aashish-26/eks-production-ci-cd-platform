@@ -1,20 +1,6 @@
-# ============================================================
-# Local development environment.
-#
-# Starts two containers:
-#   db  — PostgreSQL 15 (matches the version used in prod)
-#   app — the Node.js REST API (hot-reload via nodemon)
-#
-# Usage:
-#   docker-compose up          # start in foreground
-#   docker-compose up -d       # start in background
-#   docker-compose down -v     # stop and remove volumes
-# ============================================================
 version: "3.9"
 
 services:
-
-  # ---- PostgreSQL ----
   db:
     image: postgres:15-alpine
     restart: unless-stopped
@@ -32,7 +18,6 @@ services:
       timeout: 3s
       retries: 5
 
-  # ---- Application ----
   app:
     build:
       context: .
@@ -42,15 +27,15 @@ services:
       - "8080:8080"
     environment:
       PORT:       8080
-      LOG_LEVEL:  debug     # verbose in dev
-      PGHOST:     db        # service name resolves inside Docker network
+      LOG_LEVEL:  debug
+      PGHOST:     db
       PGPORT:     5432
       PGUSER:     postgres
       PGPASSWORD: postgres
       PGDATABASE: ordersdb
     depends_on:
       db:
-        condition: service_healthy   # wait for pg to be ready before starting
+        condition: service_healthy
 
 volumes:
-  pgdata:   # named volume so DB data persists across container restarts
+  pgdata:

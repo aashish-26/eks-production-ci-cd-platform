@@ -1,5 +1,5 @@
 # Copy this file to terraform.tfvars and fill in real values.
-# terraform.tfvars is gitignored so secrets are never committed.
+# terraform.tfvars is gitignored and must never be committed.
 
 aws_region    = "ap-south-1"
 state_bucket  = "terraform-backend-proj1"
@@ -8,8 +8,6 @@ vpc_cidr      = "10.0.0.0/16"
 ecr_repo_name = "eks-app"
 cluster_name  = "eks-dev-cluster"
 
-# Format: "github-org-or-username/repository-name"
-github_repo = "aashish-26/eks-production-ci-cd-platform"
+github_repo = "your-github-username/your-repo-name"
 
-# Set a strong password; never commit the real value
 grafana_admin_password = "<your-grafana-admin-password>"
