@@ -93,7 +93,25 @@ jobs:
             --name ${{ secrets.EKS_CLUSTER_NAME }} \
             --region ${{ env.AWS_REGION }}
 
-      # 11. Helm deploy - --wait blocks until all pods are Ready
+      # 11. Make the PostgreSQL password available in the default namespace.
+      #     Bitnami PostgreSQL creates Secret "postgresql" in the database
+      #     namespace. The app pod references that Secret from the default
+      #     namespace via deployment.yaml secretKeyRef — Kubernetes does not
+      #     allow cross-namespace Secret references, so we copy it here.
+      #     `kubectl apply` is idempotent: safe to re-run on every deploy.
+      - name: Copy PostgreSQL secret to default namespace
+        run: |
+          kubectl get secret postgresql -n database -o json \
+            | jq 'del(
+                .metadata.resourceVersion,
+                .metadata.uid,
+                .metadata.creationTimestamp,
+                .metadata.annotations,
+                .metadata.ownerReferences
+              ) | .metadata.namespace = "default"' \
+            | kubectl apply -f -
+
+      # 12. Helm deploy - --wait blocks until all pods are Ready
       - name: Deploy via Helm
         env:
           ECR_REPOSITORY: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO_NAME }}
@@ -105,12 +123,16 @@ jobs:
             --set image.tag=$IMAGE_TAG \
             --wait --timeout 5m
 
-      # 12. Smoke test - confirm /health responds 200 via the ALB
+      # 13. Smoke test - confirm /health responds 200 via the ALB.
+      #     The Helm fullname template renders as <chartName>-<releaseName>
+      #     = eks-app-eks-app, so the ingress is eks-app-eks-app-ingress.
+      #     Using a label selector avoids hardcoding the exact name.
       - name: Smoke test
         run: |
-          ALB_HOST=$(kubectl get ingress eks-app-ingress \
+          ALB_HOST=$(kubectl get ingress \
             -n default \
-            -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+            -l "app.kubernetes.io/instance=eks-app" \
+            -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}')
           echo "ALB hostname: $ALB_HOST"
           for i in $(seq 1 10); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://$ALB_HOST/health || echo "000")

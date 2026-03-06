@@ -125,4 +125,4 @@ db:
 
   # Fallback: existing Secret name and key (used when password is empty)
   passwordSecret: postgresql
-  passwordKey: postgresql-password
+  passwordKey: postgres-password
