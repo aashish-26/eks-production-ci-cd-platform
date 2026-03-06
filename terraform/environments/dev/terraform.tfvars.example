@@ -2,14 +2,14 @@
 # terraform.tfvars is gitignored so secrets are never committed.
 
 aws_region    = "ap-south-1"
-state_bucket  = "<your-unique-s3-bucket-name>"
-lock_table    = "<your-dynamodb-table-name>"
+state_bucket  = "terraform-backend-proj1"
+lock_table    = "terraform-backend-proj1-locks"
 vpc_cidr      = "10.0.0.0/16"
 ecr_repo_name = "eks-app"
 cluster_name  = "eks-dev-cluster"
 
 # Format: "github-org-or-username/repository-name"
-github_repo = "<your-github-org>/<your-repo-name>"
+github_repo = "aashish-26/eks-production-ci-cd-platform"
 
 # Set a strong password; never commit the real value
 grafana_admin_password = "<your-grafana-admin-password>"
