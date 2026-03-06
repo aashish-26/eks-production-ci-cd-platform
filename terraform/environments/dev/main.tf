@@ -102,14 +102,20 @@ module "cluster_autoscaler" {
 
 # ============================================================
 # Monitoring — Prometheus + Grafana (Phase 7)
+#
+# Managed directly via Helm — NOT via Terraform.
+# The kube-prometheus-stack chart (~8 workloads + CRDs) consistently
+# exceeds Terraform's Helm provider timeout during upgrades, and the
+# provider requires downloading the chart index even during plan.
+#
+# Deploy / upgrade manually:
+#   helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+#   helm repo update
+#   helm upgrade --install kube-prometheus-stack \
+#     prometheus-community/kube-prometheus-stack \
+#     --namespace monitoring --create-namespace \
+#     --version 61.0.0
 # ============================================================
-
-module "monitoring" {
-  source = "../../modules/monitoring"
-
-  namespace              = "monitoring"
-  grafana_admin_password = var.grafana_admin_password
-}
 
 # ============================================================
 # GitHub Actions OIDC (Phase 5 prerequisite)
@@ -194,11 +200,74 @@ resource "aws_iam_role_policy" "github_actions" {
 }
 
 # ============================================================
-# Outputs
+# gp3 StorageClass
+#
+# gp3 is the current recommended EBS volume type:
+#   - 20% cheaper than gp2
+#   - Baseline 3000 IOPS / 125 MiB/s (vs gp2's burst model)
+#
+# Uses ebs.csi.aws.com provisioner (requires aws-ebs-csi-driver addon).
+# Set as the cluster default so PVCs without an explicit storageClassName
+# (e.g. postgresql StatefulSets) bind automatically.
 # ============================================================
+
+resource "kubernetes_storage_class_v1" "gp3" {
+  metadata {
+    name = "gp3"
+    annotations = {
+      # Make this the default StorageClass so PVCs without a storageClassName
+      # get gp3 instead of the legacy gp2 in-tree provisioner.
+      "storageclass.kubernetes.io/is-default-class" = "true"
+    }
+  }
+
+  storage_provisioner    = "ebs.csi.aws.com"
+  volume_binding_mode    = "WaitForFirstConsumer"   # provision volume in same AZ as the pod
+  reclaim_policy         = "Delete"
+  allow_volume_expansion = true
+
+  parameters = {
+    type      = "gp3"
+    encrypted = "true"   # encrypt EBS volumes at rest (no cost)
+  }
+
+  depends_on = [module.eks]
+}
+
+# Recreate gp2 using the EBS CSI provisioner so existing StatefulSets that
+# reference storageClassName: gp2 continue to work after the old in-tree
+# gp2 (provisioner: kubernetes.io/aws-ebs) is deleted.
+# Run before terraform apply:  kubectl delete storageclass gp2
+resource "kubernetes_storage_class_v1" "gp2_csi" {
+  metadata {
+    name = "gp2"
+    annotations = {
+      "storageclass.kubernetes.io/is-default-class" = "false"
+    }
+  }
+
+  storage_provisioner    = "ebs.csi.aws.com"
+  volume_binding_mode    = "WaitForFirstConsumer"
+  reclaim_policy         = "Delete"
+  allow_volume_expansion = true
+
+  parameters = {
+    type      = "gp2"
+    encrypted = "true"
+  }
+
+  depends_on = [module.eks]
+}
 
 output "ecr_repo_url" {
   description = "Full ECR repository URL. Used in CI as the image registry."
+  value       = module.ecr.repository_url
+}
+
+# Legacy alias kept so the existing state entry is not removed.
+# Both outputs resolve to the same value.
+output "ecr_repo" {
+  description = "Deprecated: use ecr_repo_url."
   value       = module.ecr.repository_url
 }
 

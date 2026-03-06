@@ -99,7 +99,9 @@ resource "aws_eip" "nat" {
 
 resource "aws_nat_gateway" "this" {
   allocation_id = aws_eip.nat.id
-  subnet_id     = values(aws_subnet.public)[0].id
+  # Use the first AZ explicitly so the key is statically known at plan time.
+  # values() ordering is not guaranteed; var.azs[0] is deterministic.
+  subnet_id     = aws_subnet.public[var.azs[0]].id
   tags          = merge(var.tags, { Name = "eks-nat-gw" })
 
   depends_on = [aws_internet_gateway.this]
@@ -120,8 +122,10 @@ resource "aws_route_table" "public" {
 }
 
 resource "aws_route_table_association" "public" {
-  for_each       = aws_subnet.public
-  subnet_id      = each.value.id
+  # for_each keys must be statically known at plan time — use the locals map,
+  # not aws_subnet.public (which is unknown before the subnets are created).
+  for_each       = local.public_subnet_map
+  subnet_id      = aws_subnet.public[each.key].id
   route_table_id = aws_route_table.public.id
 }
 
@@ -136,7 +140,8 @@ resource "aws_route_table" "private" {
 }
 
 resource "aws_route_table_association" "private" {
-  for_each       = aws_subnet.private
-  subnet_id      = each.value.id
+  # Same pattern: static locals map for keys, dynamic subnet ID for value.
+  for_each       = local.private_subnet_map
+  subnet_id      = aws_subnet.private[each.key].id
   route_table_id = aws_route_table.private.id
 }

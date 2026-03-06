@@ -15,7 +15,7 @@ kind: PodDisruptionBudget
 metadata:
   name: {{ include "eks-app.fullname" . }}-pdb
 spec:
-  minAvailable: {{ .Values.pdb.minAvailable }}
+  maxUnavailable: {{ .Values.pdb.maxUnavailable }}
   selector:
     matchLabels:
       {{- include "eks-app.labels" . | nindent 6 }}

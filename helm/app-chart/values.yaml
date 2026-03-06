@@ -85,7 +85,11 @@ hpa:
 # ------------------------------------------------
 pdb:
   enabled: true
-  minAvailable: 1
+  # maxUnavailable: 1 allows node drain to evict the pod during voluntary
+  # disruptions (node upgrades, AZ evacuation). With minAvailable: 1 and
+  # only 1 replica running, node drain is permanently blocked because
+  # zero pods could ever be evicted.
+  maxUnavailable: 1
 
 # ------------------------------------------------
 # ServiceAccount (Phase 4)

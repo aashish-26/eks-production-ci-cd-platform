@@ -1,6 +1,6 @@
 output "grafana_namespace" {
   description = "Namespace where Grafana is deployed"
-  value       = kubernetes_namespace_v1.monitoring.metadata[0].name
+  value       = var.namespace
 }
 
 output "grafana_service_name" {

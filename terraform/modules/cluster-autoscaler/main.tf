@@ -134,7 +134,7 @@ resource "helm_release" "cluster_autoscaler" {
   repository = "https://kubernetes.github.io/autoscaler"
   chart      = "cluster-autoscaler"
   namespace  = var.namespace
-  version    = "~> 9.37"
+  version    = "9.37.0"
 
   # All chart values are expressed as a single HCL object so Terraform can
   # track type-safe booleans and maps without the deprecated `set {}` blocks.

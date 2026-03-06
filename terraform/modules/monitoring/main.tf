@@ -16,27 +16,43 @@
 
 terraform {
   required_providers {
-    kubernetes = { source = "hashicorp/kubernetes" }
-    helm       = { source = "hashicorp/helm" }
+    helm = { source = "hashicorp/helm" }
   }
 }
 
-# Dedicated namespace keeps monitoring workloads isolated from app workloads
-resource "kubernetes_namespace_v1" "monitoring" {
-  metadata {
-    name = var.namespace
-    labels = {
-      "app.kubernetes.io/managed-by" = "terraform"
-    }
-  }
-}
+# Namespace is created by the helm_release below via create_namespace = true.
+# We do NOT manage it as a separate kubernetes_namespace_v1 resource because
+# Terraform's resource fails with "already exists" on re-apply if a previous
+# apply partially completed. Helm's create_namespace is idempotent — it creates
+# the namespace if absent and silently skips creation if it already exists.
 
 resource "helm_release" "kube_prometheus_stack" {
-  name       = "kube-prometheus-stack"
-  repository = "https://prometheus-community.github.io/helm-charts"
-  chart      = "kube-prometheus-stack"
-  namespace  = kubernetes_namespace_v1.monitoring.metadata[0].name
-  version    = "~> 61.0"   # pin major to avoid breaking CRD changes
+  name             = "kube-prometheus-stack"
+  repository       = "https://prometheus-community.github.io/helm-charts"
+  chart            = "kube-prometheus-stack"
+  namespace        = var.namespace
+  create_namespace = true   # idempotent; safe to re-run if namespace exists
+  version          = "61.0.0"
+
+  # kube-prometheus-stack deploys ~8 workloads (Prometheus Operator, Prometheus,
+  # Alertmanager, Grafana, Node Exporter DaemonSet, kube-state-metrics + CRDs).
+  # Default Helm timeout is 5 min which is not enough. 15 min is safe.
+  timeout = 900   # 15 minutes
+
+  # atomic = true rolls back automatically on failure, but that causes Terraform
+  # to report error + delete the release, making re-apply unpredictable.
+  # atomic = false leaves the release in place so you can inspect with `helm status`.
+  atomic          = false
+  cleanup_on_fail = false
+
+  # After initial deployment, never let Terraform upgrade this release.
+  # kube-prometheus-stack is a large chart (~8 workloads + CRDs) — Helm upgrades
+  # consistently exceed any reasonable timeout. Manage upgrades manually:
+  #   helm upgrade kube-prometheus-stack prometheus-community/kube-prometheus-stack \
+  #     -n monitoring --reuse-values
+  lifecycle {
+    ignore_changes = all
+  }
 
   # All chart values — including the sensitive admin password — are expressed
   # as a single HCL object. Because var.grafana_admin_password is declared
@@ -46,15 +62,12 @@ resource "helm_release" "kube_prometheus_stack" {
   values = [
     yamlencode({
       grafana = {
-        # Do NOT hardcode; pass via -var or terraform.tfvars (gitignored).
-        # Sensitive propagation: this whole values string is redacted in plan output.
         adminPassword = var.grafana_admin_password
-
-        # LoadBalancer for dev convenience; use Ingress with TLS in production.
         service = {
           type = "LoadBalancer"
         }
-        # Keep dashboards and data PVC across Helm upgrades.
+        # Persistence keeps dashboards across pod restarts.
+        # PVC is already bound to gp3 StorageClass.
         persistence = {
           enabled = true
           size    = "1Gi"
@@ -63,31 +76,44 @@ resource "helm_release" "kube_prometheus_stack" {
 
       prometheus = {
         prometheusSpec = {
-          # How often to scrape targets — balance between granularity and storage cost
           scrapeInterval = "30s"
-          # Retain 15 days of metrics in the default PVC
-          retention = "15d"
-          # Scrape any ServiceMonitor in any namespace (not just kube-prometheus-stack)
+          # No PVC — ephemeral storage only. Data lost on pod restart; fine for dev.
+          storageSpec                             = {}
           serviceMonitorSelectorNilUsesHelmValues = false
         }
       }
 
       alertmanager = {
-        enabled = true
+        alertmanagerSpec = {
+          storage = {}   # ephemeral storage
+        }
       }
 
-      # Node exporter scrapes CPU/memory/disk from every node
+      # -------------------------------------------------------
+      # Disable scrapers that target the EKS managed control
+      # plane. AWS does not expose these endpoints so the
+      # ServiceMonitors fail → chart never becomes Ready → timeout.
+      # -------------------------------------------------------
+      kubeControllerManager = {
+        enabled = false
+      }
+      kubeScheduler = {
+        enabled = false
+      }
+      kubeEtcd = {
+        enabled = false
+      }
+      kubeProxy = {
+        enabled = false
+      }
+
       nodeExporter = {
         enabled = true
       }
 
-      # Kube-state-metrics produces k8s object-level metrics
-      # (replica counts, pod phase, deployment rollout status, etc.)
       kubeStateMetrics = {
         enabled = true
       }
     })
   ]
-
-  depends_on = [kubernetes_namespace_v1.monitoring]
 }
