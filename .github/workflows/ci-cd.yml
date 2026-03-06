@@ -62,7 +62,7 @@ jobs:
           docker push $ECR_REPOSITORY:$IMAGE_TAG
 
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@0.29.0
         with:
           image-ref: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO_NAME }}:${{ steps.vars.outputs.IMAGE_TAG }}
           format: table

@@ -9,5 +9,3 @@ ecr_repo_name = "eks-app"
 cluster_name  = "eks-dev-cluster"
 
 github_repo = "your-github-username/your-repo-name"
-
-grafana_admin_password = "<your-grafana-admin-password>"

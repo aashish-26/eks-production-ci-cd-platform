@@ -1,10 +1,6 @@
-# ============================================================
 # Service — stable internal DNS name and port for the Deployment.
-#
-# Type ClusterIP: reachable only inside the cluster.
-# External traffic arrives via the Ingress (ALB), which targets
-# pods directly (alb target-type: ip) rather than the Service IP.
-# ============================================================
+# Type NodePort: exposes a port on every node so the ALB (target-type: instance)
+# can route traffic to pods via kube-proxy.
 apiVersion: v1
 kind: Service
 metadata:

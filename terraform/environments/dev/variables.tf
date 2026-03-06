@@ -54,9 +54,3 @@ variable "github_repo" {
   description = "GitHub repository in owner/repo format. Scopes the OIDC trust policy."
   type        = string
 }
-
-variable "grafana_admin_password" {
-  description = "Grafana admin password"
-  type        = string
-  sensitive   = true
-}
