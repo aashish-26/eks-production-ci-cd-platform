@@ -19,8 +19,8 @@ image:
   pullPolicy: IfNotPresent
 
 service:
-  type: ClusterIP
-  port: 80 # external port on the Service
+  type: NodePort
+  port: 80
 
 # Single source of truth for the app's listening port.
 # Referenced by Deployment (containerPort) and Service (targetPort).
@@ -59,7 +59,7 @@ ingress:
   annotations:
     kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
-    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/target-type: instance
     alb.ingress.kubernetes.io/backend-protocol: HTTP
     alb.ingress.kubernetes.io/healthcheck-path: /health
   hosts:
