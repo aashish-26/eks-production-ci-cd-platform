@@ -28,3 +28,8 @@ output "oidc_provider_url" {
   description = "URL of the EKS OIDC provider (without https://)"
   value       = module.eks.oidc_provider
 }
+
+output "node_security_group_id" {
+  description = "Security group ID attached to the managed node group instances"
+  value       = module.eks.node_security_group_id
+}

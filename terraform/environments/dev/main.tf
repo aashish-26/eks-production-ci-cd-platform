@@ -47,6 +47,16 @@ module "eks" {
   tags = local.common_tags
 }
 
+resource "aws_security_group_rule" "node_allow_nodeport" {
+  type              = "ingress"
+  from_port         = 30000
+  to_port           = 32767
+  protocol          = "tcp"
+  cidr_blocks       = [var.vpc_cidr]
+  security_group_id = module.eks.node_security_group_id
+  description       = "Allow ALB to reach NodePort services on worker nodes"
+}
+
 module "alb" {
   source = "../../modules/alb"
 
