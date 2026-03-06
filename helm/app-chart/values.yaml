@@ -62,7 +62,7 @@ ingress:
     alb.ingress.kubernetes.io/target-type: ip
     alb.ingress.kubernetes.io/backend-protocol: HTTP
   hosts:
-  - host: eks-app.example.com # replace with your real domain or ALB DNS
+  - host: ""
     paths:
     - path: /
       pathType: ImplementationSpecific

@@ -22,8 +22,7 @@ spec:
   ingressClassName: "alb"
   rules:
   {{- range .Values.ingress.hosts }}
-    - host: {{ .host }}
-      http:
+    - http:
         paths:
         {{- range .paths }}
           - path: {{ .path }}
@@ -34,5 +33,8 @@ spec:
                 port:
                   number: {{ $.Values.service.port }}
         {{- end }}
+      {{- if .host }}
+      host: {{ .host }}
+      {{- end }}
   {{- end }}
 {{- end }}
