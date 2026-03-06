@@ -306,6 +306,30 @@ kubectl rollout restart deployment aws-load-balancer-controller -n kube-system
 
 ---
 
+## 13. Trivy Scan — Binary Installation Failure
+
+**Symptom**
+```
+aquasecurity/trivy info checking GitHub for tag 'v0.60.0'
+aquasecurity/trivy info found version: 0.60.0 for v0.60.0/Linux/64bit
+Error: Process completed with exit code 1.
+```
+
+**Root cause**
+`aquasecurity/trivy-action@0.30.0` uses `setup-trivy@v0.2.2` internally, which attempted to download Trivy v0.60.0 from GitHub releases but failed (likely due to rate limiting, network issues, or the release being incomplete/problematic).
+
+**Fix**
+Updated `.github/workflows/ci-cd.yml` to use the `master` branch (more stable) and pin to a known working Trivy version:
+```yaml
+- name: Scan image with Trivy
+  uses: aquasecurity/trivy-action@master
+  with:
+    trivy-version: '0.58.1'
+    # ... rest of config
+```
+
+---
+
 ## Summary Table
 
 | # | Error | Status Code / Message | Root Cause | Fix |
@@ -322,3 +346,4 @@ kubectl rollout restart deployment aws-load-balancer-controller -n kube-system
 | 10 | Smoke test | `404` | `ImplementationSpecific` path only matches exact `/` | Change to `pathType: Prefix` |
 | 11 | Smoke test | `504` | ALB couldn't reach pod IPs — node SG blocked port 8080 | Switch to `target-type: instance` + `NodePort` service |
 | 12 | Smoke test | `503` | ALB controller denied `AuthorizeSecurityGroupIngress` on node SG (tag condition too restrictive) | Remove tag condition from Authorize/Revoke SG rules |
+| 13 | Trivy scan | `Process completed with exit code 1` | Trivy v0.60.0 binary download failed from GitHub releases | Pin trivy-action to `@master` with explicit `trivy-version: '0.58.1'` |

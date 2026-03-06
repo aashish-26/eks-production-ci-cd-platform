@@ -62,7 +62,7 @@ jobs:
           docker push $ECR_REPOSITORY:$IMAGE_TAG
 
       - name: Scan image with Trivy
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ steps.ecr.outputs.registry }}/${{ env.ECR_REPO_NAME }}:${{ steps.vars.outputs.IMAGE_TAG }}
           format: 'table'
@@ -70,6 +70,7 @@ jobs:
           ignore-unfixed: true
           severity: 'CRITICAL,HIGH'
           scanners: 'vuln'
+          trivy-version: '0.58.1'
 
       - name: Update kubeconfig
         run: |
