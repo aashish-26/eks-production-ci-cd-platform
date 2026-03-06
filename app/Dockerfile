@@ -33,6 +33,10 @@ COPY src/ ./src/
 FROM node:18-alpine
 WORKDIR /usr/src/app
 
+# Upgrade OpenSSL to fix CVE-2025-15467 (CRITICAL - RCE via oversized IV).
+# libssl3/libcrypto3 3.3.3-r0 → 3.3.6-r0.
+RUN apk upgrade --no-cache libssl3 libcrypto3
+
 # Create a non-root system user and group.
 # -S = system user (no home dir, no password)
 RUN addgroup -S app && adduser -S app -G app
